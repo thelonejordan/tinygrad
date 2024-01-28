@@ -8,6 +8,7 @@ from test.unit.test_shapetracker_math import st_equal, MultiShapeTracker
 
 def fuzz_plus():
   m = MultiShapeTracker([ShapeTracker.from_shape((random.randint(1, 10), random.randint(1, 10), random.randint(1, 10)))])
+  print(f"init: {m.sts[0]}")
   for _ in range(4): random.choice(shapetracker_ops)(m)
   backup = m.sts[0]
   m.sts.append(ShapeTracker.from_shape(m.sts[0].shape))
@@ -33,8 +34,9 @@ if __name__ == "__main__":
     for _ in trange(total, desc=f"{fuzz}"):
       st1, st2 = fuzz()
       eq = st_equal(st1, st2)
+      eq2 = st1 == st2
       if DEBUG >= 1:
         print(f"EXP: {st1}")
         print(f"GOT: {st2}")
-        print(colored("****", "green" if eq else "red"))
+        print(colored("****", "green" if eq2 else "red"))
       if not eq: exit(0)

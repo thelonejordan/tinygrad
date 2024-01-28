@@ -36,10 +36,10 @@ def _merge_dims(shape:Tuple[int, ...], strides:Tuple[int, ...], mask:Optional[Tu
 def _reshape_mask(view: View, new_shape:Tuple[sint, ...]) -> Tuple[Optional[Tuple[Tuple[sint, sint], ...]], bool]:
   if view.mask is None: return view.mask, False
   if any(not isinstance(m[0], int) or not isinstance(m[1], int) for m in view.mask): return view.mask, True
-  new_mask: List[Tuple[int, int]] = []
+  new_mask: List[Tuple[sint, sint]] = []
 
   r_masks, r_shape, r_new_shape = reversed(view.mask), reversed(view.shape), reversed(new_shape)
-  curr_stride, old_dim, new_dim, mask = 1, next(r_shape, 1), next(r_new_shape, 1), next(r_masks, (0,1))
+  curr_stride, old_dim, new_dim, mask = cast(sint, 1), next(r_shape, 1), next(r_new_shape, 1), next(r_masks, (0,1))
   if mask[1] - mask[0] < 1: return ((0, 0),) * len(new_shape), False # invalid mask
 
   while len(new_mask) < len(new_shape):
@@ -83,6 +83,10 @@ class View:
   def create(shape:Tuple[sint, ...], strides:Optional[Tuple[sint, ...]]=None, offset:sint=0, mask:Optional[Tuple[Tuple[sint, sint], ...]]=None):
     strides = canonicalize_strides(shape, strides) if strides else strides_for_shape(shape)
     contiguous = offset == 0 and mask is None and strides == strides_for_shape(shape)
+    if mask and any(elim := [b+1 >= e for b,e in mask]):
+      if any(b >= e for b,e in mask): strides, offset, mask = (0,) * len(shape), 0, ((0,0),) * len(shape)
+      offset += sum((strides[i] * mask[i][0]) if e else 0 for i, e in enumerate(elim))
+      strides = tuple(0 if e else st for st,e in zip(strides, elim))
     return View(shape, strides, offset, mask, contiguous)
 
   @functools.lru_cache(None)  # pylint: disable=method-cache-max-size-none
