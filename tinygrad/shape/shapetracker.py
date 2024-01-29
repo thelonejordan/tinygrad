@@ -7,14 +7,13 @@ from tinygrad.helpers import merge_dicts, getenv
 from tinygrad.shape.symbolic import Variable, MulNode, Node, SumNode, NumNode, sint
 from tinygrad.shape.view import View, strides_for_shape
 
-def un1d(shape:Tuple[sint, ...], offs:sint) -> List[sint]:
-  strides = strides_for_shape(shape)
-  result = []
-  for stride in strides:
-    here = offs // stride if stride else 0
-    result.append(here)
-    offs -= here * stride
-  return result
+def projected(shape:Tuple[sint, ...], offset:sint) -> List[sint]:
+  ret= []
+  for stride in strides_for_shape(shape):
+    here = offset // stride if stride else 0
+    ret.append(here)
+    offset -= here * stride
+  return ret
 
 @functools.lru_cache(maxsize=None)
 def merge_views(vm2:View, vm1:View) -> Optional[View]:
@@ -28,12 +27,12 @@ def merge_views(vm2:View, vm1:View) -> Optional[View]:
     return (merged := merge_views(vm2, vm1.shrink(vm1.mask))) and merged.pad(tuple((b,s-e) for (b,e),s in zip(vm1.mask, vm1.shape)))
 
   # Project vm1's offset and strides on to vm2.
-  origin = un1d(vm2.shape, vm1.offset)
+  origin = projected(vm2.shape, vm1.offset)
   terms: List[List[Tuple[int, sint]]] = [[] for _ in origin]
   strides: List[sint] = [0] * len(vm1.shape)
   for d1, st in enumerate(vm1.strides):
     if st == 0: continue
-    for d2, (o, s1) in enumerate(zip(origin, un1d(vm2.shape, vm1.offset + st))):
+    for d2, (o, s1) in enumerate(zip(origin, projected(vm2.shape, vm1.offset + st))):
       if (s1 := s1 - o) == 0: continue
       terms[d2].append((d1, s1))
       strides[d1] += s1 * vm2.strides[d2]
@@ -99,6 +98,15 @@ class ShapeTracker:
     ret = self
     for v in st.views: ret = ShapeTracker(ret.views + (v,)).simplify() # one view at a time = better simplification
     return ret
+
+  def __eq__(self, other):
+    if not isinstance(other, ShapeTracker): raise TypeError(f"expected type ShapeTracker, got {type(other)}")
+    if self.views[-1] == other.views[-1]: return True
+    if len(vsa := self.simplify().views) == len(vsb := other.simplify().views):
+      if all(va.canonicalize_mask()==vb.canonicalize_mask() or va.minify().canonicalize_mask() == vb.minify().canonicalize_mask() for va, vb in zip(vsa, vsb)): return True  # noqa: E501
+    return False
+
+  def canonicalize(self): return ShapeTracker(tuple(v.minify().canonicalize_mask() for v in self.simplify().views))
 
   def invert(self, out_shape:Tuple[sint, ...]) -> Optional[ShapeTracker]:
     ret = tuple(v.invert(s) for v,s in zip(self.views[::-1], [x.shape for x in self.views[::-1][1:]]+[out_shape]))
@@ -180,7 +188,6 @@ class ShapeTracker:
   def expand(self, new_shape: Tuple[sint, ...]) -> ShapeTracker: return ShapeTracker(self.views[0:-1] + (self.views[-1].expand(new_shape), ))
   def permute(self, axis: Tuple[int, ...]) -> ShapeTracker: return ShapeTracker(self.views[0:-1] + (self.views[-1].permute(axis), ))
   def stride(self, mul: Tuple[int, ...]) -> ShapeTracker: return ShapeTracker(self.views[0:-1] + (self.views[-1].stride(mul), ))
-
   def reshape(self, new_shape: Tuple[sint, ...]) -> ShapeTracker:
     if getenv("MERGE_VIEW", 1) and (new_view := self.views[-1].reshape(new_shape)) is not None: return ShapeTracker(self.views[0:-1] + (new_view,))
     return ShapeTracker(self.views + (View.create(new_shape), ))

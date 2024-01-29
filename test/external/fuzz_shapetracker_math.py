@@ -35,8 +35,11 @@ if __name__ == "__main__":
       st1, st2 = fuzz()
       eq = st_equal(st1, st2)
       eq2 = st1 == st2
+      eq3 = len(st1.views)==len(st2.views) and all(v1.canonicalize_mask() == v2.canonicalize_mask() for v1,v2 in zip(st1.views,st2.views))
       if DEBUG >= 1:
         print(f"EXP: {st1}")
         print(f"GOT: {st2}")
-        print(colored("****", "green" if eq2 else "red"))
+        print(colored("**** (sym equality)", "green" if eq else "red"))
+        print(colored("**** (nosym equality)", "green" if eq2 else "red"))
+        print(colored("**** (repr equality)", "green" if eq3 else "red"))
       if not eq: exit(0)

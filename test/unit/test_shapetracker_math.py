@@ -18,7 +18,7 @@ class MultiShapeTracker:
 
 def st_equal(st1:ShapeTracker, st2:ShapeTracker) -> bool:
   if st1.shape != st2.shape: return False
-  if st1 == st2: return True
+  if len(st1.views)==len(st2.views) and all(v1.canonicalize_mask() == v2.canonicalize_mask() for v1,v2 in zip(st1.views,st2.views)): return True
   idx = Variable("idx", 0, prod(st1.shape)-1)
   st1_idx, st1_valid = st1.reshape((st1.size,)).expr_idxs([idx])
   st2_idx, st2_valid = st2.reshape((st2.size,)).expr_idxs([idx])

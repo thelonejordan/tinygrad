@@ -5,6 +5,11 @@ from typing import Tuple, List, Optional, Dict, cast
 from tinygrad.helpers import prod, all_int, argsort
 from tinygrad.shape.symbolic import Node, NumNode, Variable, Set, sint
 
+def canonicalize_mask(shape:Tuple[sint, ...], mask:Optional[Tuple[Tuple[sint, sint], ...]]) -> Optional[Tuple[Tuple[sint, sint], ...]]:
+  if not mask: return None
+  if all(isinstance(b, int) and isinstance(e, int) and b==0 and e==s for (b,e),s in zip(mask, shape)): return None
+  return mask
+
 @functools.lru_cache(maxsize=None)
 def canonicalize_strides(shape:Tuple[int, ...], strides:Tuple[int, ...]) -> Tuple[int, ...]:
   return tuple(0 if s == 1 else st for s, st in zip(shape, strides))
@@ -16,7 +21,7 @@ def strides_for_shape(shape:Tuple[int, ...]) -> Tuple[int, ...]:
   return canonicalize_strides(shape, strides[::-1])
 
 @functools.lru_cache(maxsize=None)
-def _merge_dims(shape:Tuple[int, ...], strides:Tuple[int, ...], mask:Optional[Tuple[Tuple[int, int], ...]]=None) -> Tuple[Tuple[int, int, int], ...]:
+def _merge_dims(shape:Tuple[sint, ...], strides:Tuple[sint, ...], mask:Optional[Tuple[Tuple[sint, sint], ...]]=None) -> Tuple[Tuple[sint, sint, sint], ...]:  # noqa: E501
   # merge contiguous subparts or zero strided dims. ret = List[(merged_dims, stride, merged dims w/o zero stride), ...]
   if not shape: return tuple()
   assert len(shape) == len(strides)
@@ -87,7 +92,10 @@ class View:
       if any(b >= e for b,e in mask): strides, offset, mask = (0,) * len(shape), 0, ((0,0),) * len(shape)
       offset += sum((strides[i] * mask[i][0]) if e else 0 for i, e in enumerate(elim))
       strides = tuple(0 if e else st for st,e in zip(strides, elim))
-    return View(shape, strides, offset, mask, contiguous)
+    return View(shape, strides, offset, canonicalize_mask(shape, mask), contiguous)
+
+  def canonicalize_mask(self) -> View:
+    return View(self.shape, self.strides, self.offset, canonicalize_mask(self.shape, self.mask), self.contiguous)
 
   @functools.lru_cache(None)  # pylint: disable=method-cache-max-size-none
   def vars(self) -> Set[Variable]:
