@@ -7,15 +7,6 @@ from tinygrad.helpers import merge_dicts, getenv
 from tinygrad.shape.symbolic import Variable, MulNode, Node, SumNode, NumNode, sint
 from tinygrad.shape.view import View, strides_for_shape
 
-def _project_position(shape:Tuple[sint, ...], pos:sint) -> List[sint]:
-  # projection of position to contig tensor position (with given shape)
-  ret= []
-  for stride in strides_for_shape(shape):
-    here = pos // stride if stride else 0
-    ret.append(here)
-    pos -= here * stride
-  return ret
-
 @functools.lru_cache(maxsize=None)
 def merge_views(vm2:View, vm1:View) -> Optional[View]:
   # trivial cases
@@ -30,14 +21,15 @@ def merge_views(vm2:View, vm1:View) -> Optional[View]:
 
   # project vm1's offset and strides on to vm2
   origin = _project_position(vm2.shape, vm1.offset)
-  terms: List[List[Tuple[int, sint]]] = [[] for _ in origin]
+  terms: List[List[Tuple[int, sint]]] = [list() for _ in origin]
   strides: List[sint] = [0] * len(vm1.shape)
   for d1, st in enumerate(vm1.strides):
     if st == 0: continue
-    for d2, (o, s1) in enumerate(zip(origin, _project_position(vm2.shape, vm1.offset + st))):
-      if (s1 := s1 - o) == 0: continue
-      terms[d2].append((d1, s1))
-      strides[d1] += s1 * vm2.strides[d2]
+    # take a step along d1 (of vm1)
+    for d2, (o, idx) in enumerate(zip(origin, _project_position(vm2.shape, vm1.offset + st))):
+      if (coeff := idx - o) != 0:
+        strides[d1] += coeff * vm2.strides[d2]
+        terms[d2].append((d1, coeff))
 
   # merge dimensions in vm2 if required
   # NOTE: merging too many dimensions can make it difficult to project vm2's mask, hence only combining when required
@@ -51,6 +43,7 @@ def merge_views(vm2:View, vm1:View) -> Optional[View]:
       extents.append((merged_size, merged_term))
       merged_size, merged_term = 1, NumNode(0)
   if merged_term: return None
+
   if (vm2_shape := tuple(s for s,_ in reversed(extents))) != vm2.shape:
     return (reshaped_vm2 := vm2.reshape(vm2_shape)) and merge_views(reshaped_vm2, vm1)
 
@@ -82,6 +75,15 @@ def merge_views(vm2:View, vm1:View) -> Optional[View]:
     if bad: return None
 
   return View.create(vm1.shape, tuple(strides), sum(o * s for o, s in zip(origin, vm2.strides)) + vm2.offset)
+
+def _project_position(shape:Tuple[sint, ...], pos:sint) -> List[sint]:
+  # projection of position to contig tensor position (with given shape)
+  ret= list()
+  for stride in strides_for_shape(shape):
+    here = pos // stride if stride else 0
+    ret.append(here)
+    pos -= here * stride
+  return ret
 
 def _expr_view(view:View, idxs:List[Node], valid:Optional[Node]=None) -> Tuple[Node, Node]:
   assert len(idxs) == len(view.shape), f"need an idx for all dimensions {idxs} vs {view.shape}"
