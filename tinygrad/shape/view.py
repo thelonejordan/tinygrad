@@ -63,7 +63,7 @@ def _reshape_mask(view: View, new_shape:Tuple[sint, ...]) -> Tuple[Optional[Tupl
       mask, old_dim = (next_mask[0] * old_dim + l, (next_mask[1] - 1) * old_dim + r), old_dim * next(r_shape, 1)
 
   for mask in r_masks: # if the old shape has leading 1s, need to make sure their mask is (0,1)
-    if mask != (0, 1): return ((0, 0),) * len(new_shape), False # invalid mask
+    if mask!=(0, 1): return ((0, 0),) * len(new_shape), False # invalid mask
 
   return tuple(reversed(new_mask)), False
 
