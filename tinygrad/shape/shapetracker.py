@@ -99,9 +99,12 @@ class ShapeTracker:
     for v in st.views: ret = ShapeTracker(ret.views + (v,)).simplify() # one view at a time = better simplification
     return ret
 
-  def __eq__(self, other):
-    if not isinstance(other, ShapeTracker): raise TypeError(f"expected type ShapeTracker, got {type(other)}")
-    if self.views[-1] == other.views[-1]: return True
+  # def __eq__(self, other):
+  #   if not isinstance(other, ShapeTracker): raise TypeError(f"expected ShapeTracker, got {type(other)}")
+  #   return len(self.views)==len(other.views) and all(v1.canonicalize_mask() == v2.canonicalize_mask() for v1,v2 in zip(self.views,other.views))
+
+  def equals(self, other: ShapeTracker):
+    if self.views == other.views: return True
     if len(vsa := self.simplify().views) == len(vsb := other.simplify().views):
       if all(va.canonicalize_mask()==vb.canonicalize_mask() or va.minify().canonicalize_mask() == vb.minify().canonicalize_mask() for va, vb in zip(vsa, vsb)): return True  # noqa: E501
     return False
