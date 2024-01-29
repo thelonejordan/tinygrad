@@ -7,16 +7,18 @@ from tinygrad.helpers import merge_dicts, getenv
 from tinygrad.shape.symbolic import Variable, MulNode, Node, SumNode, NumNode, sint
 from tinygrad.shape.view import View, strides_for_shape
 
-def projected(shape:Tuple[sint, ...], offset:sint) -> List[sint]:
+def _project_position(shape:Tuple[sint, ...], pos:sint) -> List[sint]:
+  # projection of position to contig tensor position (with given shape)
   ret= []
   for stride in strides_for_shape(shape):
-    here = offset // stride if stride else 0
+    here = pos // stride if stride else 0
     ret.append(here)
-    offset -= here * stride
+    pos -= here * stride
   return ret
 
 @functools.lru_cache(maxsize=None)
 def merge_views(vm2:View, vm1:View) -> Optional[View]:
+  # trivial cases
   if vm1.contiguous and vm1.shape == vm2.shape: return vm2
   if vm2.contiguous: return vm1
   if not vm2.mask and vm1.offset == 0 and None not in (rstrides := ShapeTracker((vm2, vm1)).real_strides()):
@@ -26,19 +28,19 @@ def merge_views(vm2:View, vm1:View) -> Optional[View]:
       if not (b < e): return View.create(vm1.shape, (0,) * len(vm1.shape), 0, ((0,0),) * len(vm1.shape))
     return (merged := merge_views(vm2, vm1.shrink(vm1.mask))) and merged.pad(tuple((b,s-e) for (b,e),s in zip(vm1.mask, vm1.shape)))
 
-  # Project vm1's offset and strides on to vm2.
-  origin = projected(vm2.shape, vm1.offset)
+  # project vm1's offset and strides on to vm2
+  origin = _project_position(vm2.shape, vm1.offset)
   terms: List[List[Tuple[int, sint]]] = [[] for _ in origin]
   strides: List[sint] = [0] * len(vm1.shape)
   for d1, st in enumerate(vm1.strides):
     if st == 0: continue
-    for d2, (o, s1) in enumerate(zip(origin, projected(vm2.shape, vm1.offset + st))):
+    for d2, (o, s1) in enumerate(zip(origin, _project_position(vm2.shape, vm1.offset + st))):
       if (s1 := s1 - o) == 0: continue
       terms[d2].append((d1, s1))
       strides[d1] += s1 * vm2.strides[d2]
 
-  # Merge dimensions in vm2 if required.
-  # NB: Merging too many dimensions can make it difficult to project vm2's mask, hence only combining when required.
+  # merge dimensions in vm2 if required
+  # NOTE: merging too many dimensions can make it difficult to project vm2's mask, hence only combining when required
   idxs: List[Node] = [Variable(f"idx{i}", 0, s-1) for i,s in enumerate(vm1.shape)]
   merged_size, merged_term = 1, NumNode(0)
   extents: List[Tuple[sint, Node]] = []
@@ -53,7 +55,7 @@ def merge_views(vm2:View, vm1:View) -> Optional[View]:
     return (reshaped_vm2 := vm2.reshape(vm2_shape)) and merge_views(reshaped_vm2, vm1)
 
   if vm2.mask:
-    # Try to project vm2's mask on to vm1.
+    # try to project vm2's mask on to vm1
     newb, newe, bad = [0] * len(vm1.shape), list(vm1.shape), False
     for d2, ((b, e), o, (_, t)) in enumerate(zip(vm2.mask, origin, reversed(extents))):
       if not (t.min < b or t.max >= e): continue
@@ -72,11 +74,11 @@ def merge_views(vm2:View, vm1:View) -> Optional[View]:
       newb[d1] = max(newb[d1], math.ceil((b - o if s1 > 0 else e - o - 1) / s1))
       newe[d1] = min(newe[d1], (b - o if s1 < 0 else e - o - 1) // s1 + 1)
 
-    # If any of vm1 was masked off, try again with that mask in place.
+    # if any of vm1 was masked off, try again with that mask in place
     for b, e, s in zip(newb, newe, vm1.shape):
       if b != 0 or e != s:
         return merge_views(vm2, View.create(vm1.shape, vm1.strides, vm1.offset, tuple(zip(newb, newe))))
-    # Otherwise if vm2's mask was violated, then cannot merge.
+    # otherwise if vm2's mask was violated, then cannot merge
     if bad: return None
 
   return View.create(vm1.shape, tuple(strides), sum(o * s for o, s in zip(origin, vm2.strides)) + vm2.offset)
@@ -104,12 +106,11 @@ class ShapeTracker:
   #   return len(self.views)==len(other.views) and all(v1.canonicalize_mask() == v2.canonicalize_mask() for v1,v2 in zip(self.views,other.views))
 
   def equals(self, other: ShapeTracker):
+    # same as self.canonicalized == other.canonicalized, but faster (no redundant comps)
     if self.views == other.views: return True
     if len(vsa := self.simplify().views) == len(vsb := other.simplify().views):
       if all(va.canonicalize_mask()==vb.canonicalize_mask() or va.minify().canonicalize_mask() == vb.minify().canonicalize_mask() for va, vb in zip(vsa, vsb)): return True  # noqa: E501
     return False
-
-  def canonicalize(self): return ShapeTracker(tuple(v.minify().canonicalize_mask() for v in self.simplify().views))
 
   def invert(self, out_shape:Tuple[sint, ...]) -> Optional[ShapeTracker]:
     ret = tuple(v.invert(s) for v,s in zip(self.views[::-1], [x.shape for x in self.views[::-1][1:]]+[out_shape]))
@@ -117,6 +118,9 @@ class ShapeTracker:
 
   @staticmethod
   def from_shape(shape:Tuple[sint, ...]): return ShapeTracker((View.create(shape),))
+
+  @property
+  def canonicalized(self): return ShapeTracker(tuple(v.minify().canonicalize_mask() for v in self.simplify().views))
 
   @property
   def contiguous(self) -> bool: return len(self.views) == 1 and self.views[0].contiguous
