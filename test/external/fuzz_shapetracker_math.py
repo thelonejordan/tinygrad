@@ -8,7 +8,7 @@ from test.unit.test_shapetracker_math import st_equal, MultiShapeTracker
 
 def fuzz_plus():
   m = MultiShapeTracker([ShapeTracker.from_shape((random.randint(1, 10), random.randint(1, 10), random.randint(1, 10)))])
-  print(f"init: {m.sts[0]}")
+  print(f"\ninit: {m.sts[0]}") # TODO: remove before merge
   for _ in range(4): random.choice(shapetracker_ops)(m)
   backup = m.sts[0]
   m.sts.append(ShapeTracker.from_shape(m.sts[0].shape))
@@ -28,22 +28,26 @@ def fuzz_invert():
   return start, st_sum
 
 if __name__ == "__main__":
-  # random.seed(42)
+  # random.seed(40)
   total = getenv("CNT", 1000)
   for fuzz in [globals()[f'fuzz_{x}'] for x in getenv("FUZZ", "invert,plus").split(",")]:
     for _ in trange(total, desc=f"{fuzz}"):
       st1, st2 = fuzz()
       eq = st_equal(st1, st2)
-      eq2 = st1.equals(st2)
-      eq3 = (c1:=st1.canonicalized) == (c2:=st2.canonicalized)
-      eq4 = len(st1.views)==len(st2.views) and all(v1.canonicalize_mask() == v2.canonicalize_mask() for v1,v2 in zip(st1.views,st2.views))
+      eq2 = st1.equals(st2) # TODO: remove before merge
+      eq3 = (c1:=st1.canonicalized) == (c2:=st2.canonicalized) # TODO: remove before merge
+      eq4 = len(st1.views)==len(st2.views) # TODO: remove before merge
+      eq4 = eq4 and all(v1.canonicalize_mask() == v2.canonicalize_mask() for v1,v2 in zip(st1.views,st2.views)) # TODO: remove before merge
       if DEBUG >= 1:
+        print()
         print(f"EXP: {st1}")
         print(f"GOT: {st2}")
-        print(f"EXP CANON: {c1}")
-        print(f"GOT CANON: {c2}")
+        print()
+        print(f"EXP CANON: {c1}") # TODO: remove before merge
+        print(f"GOT CANON: {c2}") # TODO: remove before merge
+        print()
         print(colored("**** (sym deep equality)", "green" if eq else "red"))
-        print(colored("**** (nosym deep equality)", "green" if eq2 else "red"))
-        print(colored("**** (canon repr equality)", "green" if eq3 else "red"))
-        print(colored("**** (repr equality)", "green" if eq4 else "red"))
-      if not eq: exit(0)
+        print(colored("**** (nosym deep equality)", "green" if eq2 else "red")) # TODO: remove before merge
+        print(colored("**** (canon repr equality)", "green" if eq3 else "red")) # TODO: remove before merge
+        print(colored("**** (repr equality)", "green" if eq4 else "red")) # TODO: remove before merge
+      if not (eq and True): exit(0)

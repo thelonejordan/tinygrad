@@ -45,6 +45,7 @@ class Node:
     if self.__class__ is NumNode: return NumNode(cast(int, self.b)*b) if isinstance(b, int) else b*self.b
     return create_node(MulNode(self, b.b)) if isinstance(b, NumNode) else create_node(MulNode(self, b))
   def __rmul__(self, b:int): return self*b
+  def __abs__(self): return (-1*(self<0))*self
 
   # *** complex ops ***
 
