@@ -7,14 +7,27 @@ from tinygrad.helpers import merge_dicts, getenv
 from tinygrad.shape.symbolic import Variable, MulNode, Node, SumNode, NumNode, sint
 from tinygrad.shape.view import View, strides_for_shape
 
-def un1d(shape:Tuple[sint, ...], offs:sint) -> List[sint]:
-  strides = strides_for_shape(shape)
-  result = []
-  for stride in strides:
-    here = offs // stride if stride else 0
-    result.append(here)
-    offs -= here * stride
-  return result
+def _un1d(shape:Tuple[sint, ...], pos:sint) -> List[sint]:
+  ret = []
+  for stride in strides_for_shape(shape):
+    here = pos // stride if stride else 0
+    ret.append(here)
+    pos -= here * stride
+  return ret
+
+def _project_view(vm2:View, vm1:View) -> Tuple[List[sint], List[List[Tuple[int, sint]]], List[sint]]:
+  # project vm1's offset and strides on to vm2
+  origin = _un1d(vm2.shape, vm1.offset)
+  coeffs: List[List[Tuple[int, sint]]] = [[] for _ in origin]
+  strides: List[sint] = [0] * len(vm1.shape)
+  for d1, st in enumerate(vm1.strides):
+    # take a step (or a single stride) along each dim (of vm1)
+    if st == 0: continue
+    for d2, (o, idx) in enumerate(zip(origin, _un1d(vm2.shape, vm1.offset + st))):
+      if (coeff := idx - o) == 0: continue
+      strides[d1] += coeff * vm2.strides[d2]
+      coeffs[d2].append((d1, coeff))
+  return origin, coeffs, strides
 
 @functools.lru_cache(maxsize=None)
 def merge_views(vm2:View, vm1:View) -> Optional[View]:
@@ -27,16 +40,8 @@ def merge_views(vm2:View, vm1:View) -> Optional[View]:
       if not (b < e): return View.create(vm1.shape, (0,) * len(vm1.shape), 0, ((0,0),) * len(vm1.shape))
     return (merged := merge_views(vm2, vm1.shrink(vm1.mask))) and merged.pad(tuple((b,s-e) for (b,e),s in zip(vm1.mask, vm1.shape)))
 
-  # Project vm1's offset and strides on to vm2.
-  origin = un1d(vm2.shape, vm1.offset)
-  terms: List[List[Tuple[int, sint]]] = [[] for _ in origin]
-  strides: List[sint] = [0] * len(vm1.shape)
-  for d1, st in enumerate(vm1.strides):
-    if st == 0: continue
-    for d2, (o, s1) in enumerate(zip(origin, un1d(vm2.shape, vm1.offset + st))):
-      if (s1 := s1 - o) == 0: continue
-      terms[d2].append((d1, s1))
-      strides[d1] += s1 * vm2.strides[d2]
+  # Project vm1 on to vm2.
+  origin, terms, strides = _project_view(vm2, vm1)
 
   # Merge dimensions in vm2 if required.
   # NB: Merging too many dimensions can make it difficult to project vm2's mask, hence only combining when required.
@@ -104,8 +109,17 @@ class ShapeTracker:
     ret = tuple(v.invert(s) for v,s in zip(self.views[::-1], [x.shape for x in self.views[::-1][1:]]+[out_shape]))
     return ShapeTracker(cast(Tuple[View, ...], ret)).reshape(out_shape) if all(x is not None for x in ret) else None
 
+  def equals(self, other: ShapeTracker) -> bool:
+    # same as self.canonicalized() == other.canonicalized()
+    if self == other: return True
+    if len(vsa := self.simplify().views) == len(vsb := other.simplify().views):
+      if all(va==vb or va.minify() == vb.minify() for va,vb in zip(vsa,vsb)): return True
+    return False
+
+  def canonicalize(self) -> ShapeTracker: return ShapeTracker(tuple(v.minify() for v in self.simplify().views))
+
   @staticmethod
-  def from_shape(shape:Tuple[sint, ...]): return ShapeTracker((View.create(shape),))
+  def from_shape(shape:Tuple[sint, ...]) -> ShapeTracker: return ShapeTracker((View.create(shape),))
 
   @property
   def contiguous(self) -> bool: return len(self.views) == 1 and self.views[0].contiguous
