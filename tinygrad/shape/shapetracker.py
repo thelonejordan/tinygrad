@@ -116,7 +116,7 @@ class ShapeTracker:
       if all(va==vb or va.minify() == vb.minify() for va,vb in zip(vsa,vsb)): return True
     return False
 
-  def canonicalize(self) -> ShapeTracker: return ShapeTracker(tuple(v.minify() for v in self.simplify().views))
+  def canonicalize(self) -> ShapeTracker: return ShapeTracker(tuple(v.minify() for v in self.simplify().views)).simplify()
 
   @staticmethod
   def from_shape(shape:Tuple[sint, ...]) -> ShapeTracker: return ShapeTracker((View.create(shape),))

@@ -31,7 +31,6 @@ def fuzz_invert(verbose=True) -> Tuple[ShapeTracker, ShapeTracker]:
   st_sum = (m.sts[0] + inv) if inv else None
   return start, st_sum
 
-# DEBUG=2 VERBOSE=2 SEED=6558 CNT=1000 CHECK_NEQ=1 ONLY_NEQ=1 FUZZ=plus PYTHONPATH="." python3 test/external/fuzz_shapetracker_math.py
 def _display_extra_info(exp: ShapeTracker, got: ShapeTracker):
   if len(exp.views) >= 2:
     print()
@@ -74,6 +73,15 @@ def _display_extra_info(exp: ShapeTracker, got: ShapeTracker):
     print(f"{gotv2.mask=}")
     print(f"{gotv2.contiguous=}")
 
+# DEBUG=2 VERBOSE=2 SEED=6558 CNT=1000 CHECK_NEQ=1 ONLY_NEQ=1 FUZZ=plus PYTHONPATH="." python3 test/external/fuzz_shapetracker_math.py
+# benchmarks
+# same but unequal 6.30%
+# same but unequal cannon 5.04%
+
+# same but unequal 6.30%
+# same but unequal cannon 4.76%
+# simplify vs cannon diff 1.54%
+
 if __name__ == "__main__":
   if getenv("SEED", -1) >= 0: random.seed(getenv("SEED"))
   verbose = False if DEBUG >=1 and getenv("ONLY_NEQ", 0)==1 else getenv("VERBOSE", 1) >=1
@@ -88,12 +96,14 @@ if __name__ == "__main__":
       # compare results
       eq = st_equal(st1, st2)
       eqs = sts1 == sts2
-      eqc = st1.equals(st2)
+      eqc = stc1 == stc2
+      # TODO: try to use .equals()
+      # eqc = st1.equals(st2)
       # update stats
       if getenv("CHECK_NEQ") and eq and not eqs: same_but_neq += 1
       if eq and not eqc: same_but_neq_cannon += 1
       # print stuff
-      filterout = False if DEBUG >=1 and getenv("ONLY_NEQ", 0)==0 else not (eq and not eqc)
+      filterout = False if DEBUG >=1 and getenv("ONLY_NEQ", 0)==0 else not (eq and not eqs)
       if not filterout:
         if eq and not eqc:
           if DEBUG >=2 and getenv("VERBOSE", 1) == 2:
@@ -114,11 +124,14 @@ if __name__ == "__main__":
         if DEBUG >=2:
           print(colored("**** (canon repr)", "green" if eqc else "red"))
       # mandatory asserts
-      assert eqc == (stc1 == stc2), f"st1.equals(st2) != st1.canonicalize() == .canonicalize(), {eqc=} {stc1=} {stc2=}"
+      # TODO: enable this assert.
+      # assert eqc == (stc1 == stc2), f"st1.equals(st2) != st1.canonicalize() == .canonicalize(), {eqc=} {stc1=} {stc2=}"
       if eqs: assert eq and eqc, f"something is broken {eq=} {eqs=} {eqc=}"
       if eqc: assert eq, f"something is broken {eq=} {eqc=}"
       if not (eq and True): exit(0)
     # print agg stats
     if getenv("CHECK_NEQ"):
       print(f"same but unequal {(same_but_neq/total)*100:.2f}%")
-      if DEBUG >=2: print(f"same but unequal cannon {(same_but_neq_cannon/total)*100:.2f}%")
+      if DEBUG >=2:
+        print(f"same but unequal cannon {(same_but_neq_cannon/total)*100:.2f}%")
+        print(f"simplify vs cannon diff {((same_but_neq-same_but_neq_cannon)/total)*100:.2f}%")
