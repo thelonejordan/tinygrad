@@ -82,6 +82,10 @@ def _display_extra_info(exp: ShapeTracker, got: ShapeTracker):
 # same but unequal cannon 4.76%
 # simplify vs cannon diff 1.54%
 
+# same but unequal 6.18%
+# same but unequal cannon 4.64%
+# simplify vs cannon diff 1.54%
+
 if __name__ == "__main__":
   if getenv("SEED", -1) >= 0: random.seed(getenv("SEED"))
   verbose = False if DEBUG >=1 and getenv("ONLY_NEQ", 0)==1 else getenv("VERBOSE", 1) >=1
@@ -103,7 +107,7 @@ if __name__ == "__main__":
       if getenv("CHECK_NEQ") and eq and not eqs: same_but_neq += 1
       if eq and not eqc: same_but_neq_cannon += 1
       # print stuff
-      filterout = False if DEBUG >=1 and getenv("ONLY_NEQ", 0)==0 else not (eq and not eqs)
+      filterout = False if DEBUG >=1 and getenv("ONLY_NEQ", 0)==0 else not (eq and not eqc) # TODO: changed from eqs (correct) to eqc, revert!
       if not filterout:
         if eq and not eqc:
           if DEBUG >=2 and getenv("VERBOSE", 1) == 2:
@@ -113,7 +117,7 @@ if __name__ == "__main__":
           print(colored("same but unequal", "yellow"))
           print(f"EXP SIMPL: {sts1}")
           print(f"GOT SIMPL: {sts2}")
-        if DEBUG >= 2:
+        if DEBUG >=2:
           print(f"EXP CANON: {stc1}")
           print(f"GOT CANON: {stc2}")
         if DEBUG >=1:
