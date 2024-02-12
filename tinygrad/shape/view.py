@@ -7,7 +7,7 @@ from tinygrad.shape.symbolic import Node, NumNode, Variable, sint
 
 @functools.lru_cache(maxsize=None)
 def canonicalize_strides(shape:Tuple[int, ...], strides:Tuple[int, ...]) -> Tuple[int, ...]:
-  return tuple(0 if s == 1 else st for s, st in zip(shape, strides))
+  return tuple(0 if s in (0,1) else st for s, st in zip(shape, strides))
 
 @functools.lru_cache(maxsize=None)
 def strides_for_shape(shape:Tuple[int, ...]) -> Tuple[int, ...]:
