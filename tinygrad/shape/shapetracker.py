@@ -50,28 +50,30 @@ def _real_strides(vm2:View, vm1:View) -> Tuple[Optional[sint], ...]:
 @functools.lru_cache(maxsize=None)
 def merge_views(vm2:View, vm1:View, rigid:bool=True) -> Optional[View]:
   if vm2.contiguous: return vm1
-  if vm1.contiguous and vm1.shape == vm2.shape: return vm2
-  if not rigid and vm1.contiguous and vm1.size() == vm2.size(): return vm2
-  if vm1.contiguous and vm1.size() == vm2.size() and (ret := vm2.reshape(vm1.shape)) is not None: return ret
-  if not rigid and vm1.contiguous and vm1.size() != vm2.size() and vm2.offset == 0 and vm2.mask is None:
-    if (nshape := _fit_shape(vm2.shape, vm1.size())) is not None and len(nshape) == len(vm2.shape):
-      if prod(nshape) == vm1.size(): return View.create(nshape, vm2.strides, 0, None)
-  if not vm2.mask and vm1.offset == 0 and None not in (rstrides := ShapeTracker((vm2, vm1)).real_strides()):
-    return View.create(vm1.shape, cast(Tuple[sint, ...], rstrides), vm2.offset, vm1.mask)
+  if vm1.contiguous:
+    if vm1.shape == vm2.shape: return vm2
+    if vm1.size() == vm2.size():
+      if not rigid: return vm2
+      if (ret := vm2.reshape(vm1.shape)) is not None: return ret
+    if not rigid:
+      if not vm2.mask and vm2.offset == 0:
+        if (nshape := _fit_shape(vm2.shape, vm1.size())) is not None and len(nshape) == len(vm2.shape):
+          if prod(nshape) == vm1.size(): return View.create(nshape, vm2.strides, 0, None)
   if not rigid:
     # TODO: handle cases where mask is there!
-    if not vm1.mask and vm1.strides == strides_for_shape(vm1.shape):# or (vm1.mask and vm1.strides == (1,)):
-      # first non-zero stride
-      idx = next(itr := iter(range(len(vm2.shape))))
-      lower = vm1.offset #+ (vm1.mask[idx][0] if vm1.mask else 0)
-      upper = vm1.offset + vm1.size() #+ (-vm1.mask[idx][1] if vm1.mask else 0)
-      if lower >= upper: return View.create(vm1.shape, (0,) * len(vm1.shape), 0, ((0,0),) * len(vm1.shape))
-      while vm2.strides[idx] == 0: idx = next(itr)
-      if 0 <= lower < upper and (stride := prod(vm2.shape[idx+1:])) != 0:
-        if lower % stride == 0 and upper % stride == 0:
-          if (lb := lower // stride) <= vm2.shape[0] and (ub := upper // stride) <= vm2.shape[0]:
-            vm2_new = View.create(vm2.shape[idx:], vm2.strides[idx:], vm2.offset, vm2.mask[idx:] if vm2.mask else None)
-            return vm2_new.shrink(tuple((lb,ub) if i == 0 else (0,s) for i,s in enumerate(vm2.shape[idx:])))
+    if (vm1.mask and vm1.strides == (1,)) or (not vm1.mask and vm1.strides == strides_for_shape(vm1.shape)):
+        idx = next(itr := iter(range(len(vm2.shape))))
+        lower = vm1.offset + (vm1.mask[idx][0] if vm1.mask else 0)
+        upper = vm1.offset + vm1.size() #+ (-vm1.mask[idx][1] if vm1.mask else 0)
+        if lower >= upper: return View.create(vm1.shape, (0,) * len(vm1.shape), 0, ((0,0),) * len(vm1.shape))
+        while vm2.strides[idx] == 0: idx = next(itr) # first non-zero stride
+        if 0 <= lower < upper and (stride := prod(vm2.shape[idx+1:])) != 0:
+          if lower % stride == 0 and upper % stride == 0:
+            if (lb := lower // stride) <= vm2.shape[0] and (ub := upper // stride) <= vm2.shape[0]:
+              vm2_new = View.create(vm2.shape[idx:], vm2.strides[idx:], vm2.offset, vm2.mask[idx:] if vm2.mask else None)
+              return vm2_new.shrink(tuple((lb,ub) if i == 0 else (0,s) for i,s in enumerate(vm2.shape[idx:])))
+  if not vm2.mask and vm1.offset == 0 and None not in (rstrides := ShapeTracker((vm2, vm1)).real_strides()):
+    return View.create(vm1.shape, cast(Tuple[sint, ...], rstrides), vm2.offset, vm1.mask)
   if vm1.mask:
     for b,e in vm1.mask:
       if not (b < e): return View.create(vm1.shape, (0,) * len(vm1.shape), 0, ((0,0),) * len(vm1.shape))
@@ -79,7 +81,6 @@ def merge_views(vm2:View, vm1:View, rigid:bool=True) -> Optional[View]:
 
   # Project vm1 on to vm2.
   origin, terms, strides = _project_view(vm2, vm1)
-
   # Merge dimensions in vm2 if required.
   # NB: Merging too many dimensions can make it difficult to project vm2's mask, hence only combining when required.
   idxs: List[Node] = [Variable(f"idx{i}", 0, s-1) for i,s in enumerate(vm1.shape)]
