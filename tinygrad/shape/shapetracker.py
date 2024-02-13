@@ -3,7 +3,7 @@ from __future__ import annotations
 import functools, math
 from dataclasses import dataclass
 from typing import Tuple, List, Optional, Dict, Set, cast, Iterable, Union
-from tinygrad.helpers import merge_dicts, getenv, prod
+from tinygrad.helpers import merge_dicts, getenv, prod, argsort
 from tinygrad.shape.symbolic import Variable, MulNode, Node, SumNode, NumNode, sint
 from tinygrad.shape.view import View, strides_for_shape
 
@@ -149,9 +149,8 @@ class ShapeTracker:
     return ShapeTracker(cast(Tuple[View, ...], ret)).reshape(out_shape) if all(x is not None for x in ret) else None
 
   def _canonicalize(self) -> ShapeTracker:
-    ret = self.simplify(rigid=False)
-    v = v.shrink(v.mask) if (v := ret.views[-1]).mask else v
-    return ShapeTracker(tuple(view.minify() for view in ret.views[:-1]) + (v.minify(),)).simplify(rigid=False)
+    ret = (self.shrink(mask) if (mask := self.views[-1].mask) else self).simplify(rigid=False)
+    return ShapeTracker(tuple(v.minify() for v in ret.permute(argsort(ret.views[-1].strides)[::-1]).views)).simplify(rigid=False)
 
   def canonicalize(self) -> ShapeTracker:
     ret = self
