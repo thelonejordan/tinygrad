@@ -150,12 +150,15 @@ class ShapeTracker:
 
   def _canonicalize(self) -> ShapeTracker:
     ret = (self.shrink(mask) if (mask := self.views[-1].mask) else self).simplify(rigid=False)
-    return ShapeTracker(tuple(v.minify() for v in ret.permute(argsort(ret.views[-1].strides)[::-1]).views)).simplify(rigid=False)
+    if all(0<=st for st in ret.views[-1].strides): ret = ret.permute(argsort(ret.views[-1].strides)[::-1])
+    return ShapeTracker(tuple(v.minify() for v in ret.views))
 
   def canonicalize(self) -> ShapeTracker:
-    ret = self
-    for _ in range(3): ret = ret._canonicalize()
-    return ret
+    ret = self._canonicalize()
+    while ret != (nxt := ret._canonicalize()): ret = nxt
+    # normalize
+    ret = (ret.shrink(mask) if (mask := ret.views[-1].mask) else ret) # probably overkill
+    return ret.permute(argsort(ret.views[-1].strides)[::-1])
 
   @staticmethod
   def from_shape(shape:Tuple[sint, ...]) -> ShapeTracker: return ShapeTracker((View.create(shape),))
