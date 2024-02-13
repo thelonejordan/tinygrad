@@ -151,6 +151,12 @@ class ShapeTracker:
   def _canonicalize(self) -> ShapeTracker:
     ret = (self.shrink(mask) if (mask := self.views[-1].mask) else self).simplify(rigid=False)
     if all(0<=st for st in ret.views[-1].strides): ret = ret.permute(argsort(ret.views[-1].strides)[::-1])
+    v = ret.views[-1]
+    zero_strided_dims = [i for i in range(len(v.shape)) if v.strides[i] == 0]
+    shape = tuple(s for i,s in enumerate(v.shape) if i not in zero_strided_dims)
+    strides = tuple(s for i,s in enumerate(v.strides) if i not in zero_strided_dims)
+    mask = tuple(s for i,s in enumerate(v.mask) if i not in zero_strided_dims) if v.mask else None
+    ret = ShapeTracker(ret.views[:-1] + (View.create(shape, strides, v.offset, mask),))
     return ShapeTracker(tuple(v.minify() for v in ret.views))
 
   def canonicalize(self) -> ShapeTracker:
