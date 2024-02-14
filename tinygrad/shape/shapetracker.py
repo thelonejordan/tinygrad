@@ -40,13 +40,6 @@ def _fit_shape(shape: Tuple[sint, ...], size: sint) -> Optional[Tuple[sint, ...]
   else: return tuple(reversed(new_shape))
   return None
 
-def _real_strides(vm2:View, vm1:View) -> Tuple[Optional[sint], ...]:
-  if vm1.mask is None and vm1.strides == strides_for_shape(vm1.shape) and not vm1.contiguous:
-    offset_idx = _un1d(vm2.shape, vm1.offset)
-    for o,s in zip(offset_idx, vm2.shape):
-      if o >= s: return (None,) * len(vm1.shape)
-  return tuple((_project_view(vm2, vm1))[-1])
-
 @functools.lru_cache(maxsize=None)
 def merge_views(vm2:View, vm1:View, rigid:bool=True) -> Optional[View]:
   if vm2.contiguous: return vm1
@@ -72,8 +65,6 @@ def merge_views(vm2:View, vm1:View, rigid:bool=True) -> Optional[View]:
             arg = ((min(lb,vm2_new.shape[0]),min(ub,vm2_new.shape[0])),) + tuple((0,s) for s in vm2_new.shape[1:])
             return vm2_new.shrink(arg)
     vm1 = backup
-  if not vm2.mask and vm1.offset == 0 and None not in (rstrides := ShapeTracker((vm2, vm1)).real_strides()):
-    return View.create(vm1.shape, cast(Tuple[sint, ...], rstrides), vm2.offset, vm1.mask)
   if vm1.mask:
     for b,e in vm1.mask:
       if not (b < e): return View.create(vm1.shape, (0,) * len(vm1.shape), 0, ((0,0),) * len(vm1.shape))
@@ -152,7 +143,7 @@ class ShapeTracker:
     if (a := self.canonicalize()) == (b := other.canonicalize()): return True
     if len(a.views) == len(b.views) == 1:
       c = ShapeTracker((a.views[0], b.views[0]) if a.size >= b.size else (b.views[0], a.views[0]))
-      if c.canonicalize() == ShapeTracker((c.views[0],)): return True
+      if len(c._canonicalize().views) == 1: return True
     return False
 
   def _canonicalize(self) -> ShapeTracker:
