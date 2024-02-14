@@ -149,13 +149,15 @@ class ShapeTracker:
     return ShapeTracker(cast(Tuple[View, ...], ret)).reshape(out_shape) if all(x is not None for x in ret) else None
 
   def _canonicalize(self) -> ShapeTracker:
-    v = (ret := (self.shrink(mask) if (mask := self.views[-1].mask) else self).simplify(rigid=False)).views[-1]
+    if len(strides:=(ret:=self).views[-1].strides) > 0: ret = ret.stride(tuple(1 if 0<=st else -1 for st in strides))
+    v = (ret := (ret.shrink(mask) if (mask := ret.views[-1].mask) else ret).simplify(rigid=False)).views[-1]
     zero_strided_dims = [i for i in range(len(v.shape)) if v.strides[i] == 0]
     shape = tuple(s for i,s in enumerate(v.shape) if i not in zero_strided_dims)
     strides = tuple(s for i,s in enumerate(v.strides) if i not in zero_strided_dims)
     mask = tuple(s for i,s in enumerate(v.mask) if i not in zero_strided_dims) if v.mask else None
-    ret = ShapeTracker(ret.views[:-1] + (View.create(shape, strides, v.offset, mask),))
-    if all(0 <= st for st in ret.views[-1].strides): ret = ret.permute(argsort(ret.views[-1].strides)[::-1])
+    ret = ShapeTracker(ret.views[:-1] if len(ret.views) > 1 else () + (View.create(shape, strides, v.offset, mask),))
+    if len(strides:=ret.views[-1].strides) > 0: ret = ret.stride(tuple(1 if 0<=st else -1 for st in ret.views[-1].strides))
+    if len(strides:=ret.views[-1].strides) > 1 and not all(st==strides[0] for st in strides): ret = ret.permute(argsort(ret.views[-1].strides)[::-1])
     return ShapeTracker(tuple(v.minify() for v in ret.views))
 
   def canonicalize(self) -> ShapeTracker:
@@ -163,7 +165,7 @@ class ShapeTracker:
     while ret != (nxt := ret._canonicalize()): ret = nxt
     # normalize
     ret = (ret.shrink(mask) if (mask := ret.views[-1].mask) else ret) # probably overkill
-    return ret.permute(argsort(ret.views[-1].strides)[::-1])
+    return ret.permute(argsort(sts)[::-1]) if len(sts:=ret.views[-1].strides) > 1 and not all(st==sts[0] for st in sts) else ret
 
   @staticmethod
   def from_shape(shape:Tuple[sint, ...]) -> ShapeTracker: return ShapeTracker((View.create(shape),))
