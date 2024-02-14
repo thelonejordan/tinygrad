@@ -238,7 +238,23 @@ class CanonicalShapeTracker(ShapeTracker):
   def __eq__(self, other):
     if not isinstance(other, CanonicalShapeTracker): return NotImplemented
     if self.views == other.views: return True
-    if len(self.views) == len(other.views) == 1:
-      st = ShapeTracker((self.views[0], other.views[0]) if self.size >= other.size else (other.views[0], self.views[0]))
-      if len(_canonicalize(st).views) == 1: return True
+    if len(self.views) == len(other.views) == 1 and len((a := self.views[0]).shape) == len((b := other.views[0]).shape) > 0:
+      if 0 not in a.strides and 0 not in b.strides:
+        arga, argb = [], []
+        for i in range(len(a.shape)):
+          if a.strides[i] == b.strides[i]:
+            arga.append(1)
+            argb.append(1)
+          elif a.strides[i] > b.strides[i]:
+            if a.strides[i] % b.strides[i] == 0:
+              arga.append(1)
+              argb.append(a.strides[i] // b.strides[i])
+            else: break
+          elif b.strides[i] > a.strides[i]:
+            if b.strides[i] % a.strides[i] == 0:
+              arga.append(b.strides[i] // a.strides[i])
+              argb.append(1)
+            else: break
+        else:
+          if a.stride(tuple(arga)) == b.stride(tuple(argb)): return True
     return False

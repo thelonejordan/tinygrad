@@ -102,7 +102,7 @@ if __name__ == "__main__":
           print(colored("**** (canon)", "green" if eqc else "red"))
       # mandatory asserts
       if eqs: assert eq and eqc
-      if not (eq and eqc): exit(0)
+      if not eq: exit(0)
     # print agg stats
     if getenv("CHECK_NEQ"):
       print(f"same but unequal {(same_but_neq/total)*100:.2f}%")
