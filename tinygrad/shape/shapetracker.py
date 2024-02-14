@@ -48,23 +48,16 @@ def merge_views(vm2:View, vm1:View, rigid:bool=True) -> Optional[View]:
     if vm1.size() == vm2.size():
       if not rigid: return vm2
       if (ret := vm2.reshape(vm1.shape)) is not None: return ret
-    if not rigid:
-      if not vm2.mask and vm2.offset == 0:
-        if (nshape := _fit_shape(vm2.shape, vm1.size())) is not None and len(nshape) == len(vm2.shape):
-          if prod(nshape) == vm1.size(): return View.create(nshape, vm2.strides, 0, None)
-  if not rigid:
-    vm1 = vm1.shrink(vm1.mask) if (backup := vm1).mask else vm1 # remove mask
-    if vm1.strides == strides_for_shape(vm1.shape):
-      lower = min(max(0, vm1.offset), vm2.size())
-      upper = min(max(0, vm1.offset + vm1.size()), vm2.size())
-      if lower >= upper: return View.create(vm1.shape, (0,) * len(vm1.shape), 0, ((0,0),) * len(vm1.shape))
-      if 0 < len(vm2.shape) and 0 <= lower < upper and (stride := prod(vm2.shape[1:])) != 0:
-        if lower % stride == 0 and upper % stride == 0:
-          if (lb := lower // stride) <= vm2.shape[0] and (ub := upper // stride) <= vm2.shape[0]:
-            vm2_new = View.create(vm2.shape, vm2.strides, vm2.offset, vm2.mask if vm2.mask else None)
-            arg = ((min(lb,vm2_new.shape[0]),min(ub,vm2_new.shape[0])),) + tuple((0,s) for s in vm2_new.shape[1:])
-            return vm2_new.shrink(arg)
-    vm1 = backup
+    if not rigid and not vm2.mask and vm2.offset == 0:
+      if (nshape := _fit_shape(vm2.shape, vm1.size())) is not None and len(nshape) == len(vm2.shape):
+        if prod(nshape) == vm1.size(): return View.create(nshape, vm2.strides, 0, None)
+  if not rigid and (vm1 := vm1.shrink(vm1.mask) if (backup := vm1).mask else vm1).strides == strides_for_shape(vm1.shape):
+    lower, upper, shape, vm1 = min(max(0, vm1.offset), vm2.size()), min(max(0, vm1.offset + vm1.size()), vm2.size()), vm1.shape, backup
+    if lower >= upper: return View.create(shape, (0,) * len(shape), 0, ((0,0),) * len(shape))
+    if 0 < len(vm2.shape) and 0 <= lower < upper and (stride := prod(vm2.shape[1:])) != 0:
+      if lower % stride == 0 and upper % stride == 0 and (lb := lower // stride) <= vm2.shape[0] and (ub := upper // stride) <= vm2.shape[0]:
+        vm2_new = View.create(vm2.shape, vm2.strides, vm2.offset, vm2.mask if vm2.mask else None)
+        return vm2_new.shrink(((min(lb,vm2_new.shape[0]),min(ub,vm2_new.shape[0])),) + tuple((0,s) for s in vm2_new.shape[1:]))
   if not vm2.mask and vm1.offset == 0 and None not in (rstrides := ShapeTracker((vm2, vm1)).real_strides()):
     return View.create(vm1.shape, cast(Tuple[sint, ...], rstrides), vm2.offset, vm1.mask)
   if vm1.mask:

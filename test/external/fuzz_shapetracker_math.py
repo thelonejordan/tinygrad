@@ -99,7 +99,7 @@ if __name__ == "__main__":
         if DEBUG >=1:
           print(colored(f"****{' (symbolic)' if DEBUG>=2 else ''}", "green" if eq else "red"))
         if DEBUG >=2:
-          print(colored("**** (canon repr)", "green" if eqc else "red"))
+          print(colored("**** (canon)", "green" if eqc else "red"))
       # mandatory asserts
       if eqs: assert eq and eqc
       if not (eq and eqc): exit(0)
