@@ -215,7 +215,7 @@ class ShapeTracker:
     if getenv("MERGE_VIEW", 1) and (new_view := self.views[-1].reshape(new_shape)) is not None: return ShapeTracker(self.views[0:-1] + (new_view,))
     return ShapeTracker(self.views + (View.create(new_shape), ))
 
-  # *** canonical shapetracker **
+  # *** canonical shapetracker ***
 
   def canonicalize(self) -> ShapeTracker:
     ret = _canonicalize(self)
@@ -226,11 +226,10 @@ class ShapeTracker:
 def _canonicalize(x: Union[ShapeTracker, CanonicalShapeTracker]) -> ShapeTracker:
   if len(strides:=(ret:=x).views[-1].strides) > 0: ret = ret.stride(tuple(1 if 0<=st else -1 for st in strides))
   v = (ret := (ret.shrink(mask) if (mask := ret.views[-1].mask) else ret).simplify(rigid=False)).views[-1]
-  zero_strided_dims = [i for i in range(len(v.shape)) if v.strides[i] == 0]
-  shape = tuple(s for i,s in enumerate(v.shape) if i not in zero_strided_dims)
-  strides = tuple(s for i,s in enumerate(v.strides) if i not in zero_strided_dims)
-  mask = tuple(s for i,s in enumerate(v.mask) if i not in zero_strided_dims) if v.mask else None
-  ret = ShapeTracker(ret.views[:-1] if len(ret.views) > 1 else () + (View.create(shape, strides, v.offset, mask),))
+  zero_strided = [i for i in range(len(v.shape)) if v.strides[i] == 0]
+  sh, st = tuple(s for i,s in enumerate(v.shape) if i not in zero_strided), tuple(s for i,s in enumerate(v.strides) if i not in zero_strided)
+  mask = tuple(s for i,s in enumerate(v.mask) if i not in zero_strided) if v.mask else None
+  ret = ShapeTracker(ret.views[:-1] if len(ret.views) > 1 else () + (View.create(sh, st, v.offset, mask),))
   if len(strides:=ret.views[-1].strides) > 1 and not all(st==strides[0] for st in strides): ret = ret.permute(argsort(ret.views[-1].strides)[::-1])
   return ShapeTracker(tuple(v.minify() for v in ret.views))
 
