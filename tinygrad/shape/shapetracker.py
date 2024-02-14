@@ -65,6 +65,8 @@ def merge_views(vm2:View, vm1:View, rigid:bool=True) -> Optional[View]:
             arg = ((min(lb,vm2_new.shape[0]),min(ub,vm2_new.shape[0])),) + tuple((0,s) for s in vm2_new.shape[1:])
             return vm2_new.shrink(arg)
     vm1 = backup
+  if not vm2.mask and vm1.offset == 0 and None not in (rstrides := ShapeTracker((vm2, vm1)).real_strides()):
+    return View.create(vm1.shape, cast(Tuple[sint, ...], rstrides), vm2.offset, vm1.mask)
   if vm1.mask:
     for b,e in vm1.mask:
       if not (b < e): return View.create(vm1.shape, (0,) * len(vm1.shape), 0, ((0,0),) * len(vm1.shape))
@@ -138,29 +140,6 @@ class ShapeTracker:
   def invert(self, out_shape:Tuple[sint, ...]) -> Optional[ShapeTracker]:
     ret = tuple(v.invert(s) for v,s in zip(self.views[::-1], [x.shape for x in self.views[::-1][1:]]+[out_shape]))
     return ShapeTracker(cast(Tuple[View, ...], ret)).reshape(out_shape) if all(x is not None for x in ret) else None
-
-  def equals(self, other: ShapeTracker) -> bool:
-    if (a := self.canonicalize()) == (b := other.canonicalize()): return True
-    if len(a.views) == len(b.views) == 1:
-      c = ShapeTracker((a.views[0], b.views[0]) if a.size >= b.size else (b.views[0], a.views[0]))
-      if len(c._canonicalize().views) == 1: return True
-    return False
-
-  def _canonicalize(self) -> ShapeTracker:
-    if len(strides:=(ret:=self).views[-1].strides) > 0: ret = ret.stride(tuple(1 if 0<=st else -1 for st in strides))
-    v = (ret := (ret.shrink(mask) if (mask := ret.views[-1].mask) else ret).simplify(rigid=False)).views[-1]
-    zero_strided_dims = [i for i in range(len(v.shape)) if v.strides[i] == 0]
-    shape = tuple(s for i,s in enumerate(v.shape) if i not in zero_strided_dims)
-    strides = tuple(s for i,s in enumerate(v.strides) if i not in zero_strided_dims)
-    mask = tuple(s for i,s in enumerate(v.mask) if i not in zero_strided_dims) if v.mask else None
-    ret = ShapeTracker(ret.views[:-1] if len(ret.views) > 1 else () + (View.create(shape, strides, v.offset, mask),))
-    if len(strides:=ret.views[-1].strides) > 1 and not all(st==strides[0] for st in strides): ret = ret.permute(argsort(ret.views[-1].strides)[::-1])
-    return ShapeTracker(tuple(v.minify() for v in ret.views))
-
-  def canonicalize(self) -> ShapeTracker:
-    ret = self._canonicalize()
-    while ret != (nxt := ret._canonicalize()): ret = nxt
-    return ret.permute(argsort(sts)[::-1]) if len(sts:=ret.views[-1].strides) > 1 and not all(st==sts[0] for st in sts[1:]) else ret
 
   @staticmethod
   def from_shape(shape:Tuple[sint, ...]) -> ShapeTracker: return ShapeTracker((View.create(shape),))
@@ -242,3 +221,32 @@ class ShapeTracker:
   def reshape(self, new_shape: Tuple[sint, ...]) -> ShapeTracker:
     if getenv("MERGE_VIEW", 1) and (new_view := self.views[-1].reshape(new_shape)) is not None: return ShapeTracker(self.views[0:-1] + (new_view,))
     return ShapeTracker(self.views + (View.create(new_shape), ))
+
+  # *** canonical shapetracker **
+
+  def canonicalize(self) -> ShapeTracker:
+    ret = _canonicalize(self)
+    while ret != (nxt := _canonicalize(ret)): ret = nxt
+    ret = ret.permute(argsort(sts)[::-1]) if len(sts:=ret.views[-1].strides) > 1 and not all(st==sts[0] for st in sts[1:]) else ret
+    return CanonicalShapeTracker(ret.views)
+
+def _canonicalize(x: Union[ShapeTracker, CanonicalShapeTracker]) -> ShapeTracker:
+  if len(strides:=(ret:=x).views[-1].strides) > 0: ret = ret.stride(tuple(1 if 0<=st else -1 for st in strides))
+  v = (ret := (ret.shrink(mask) if (mask := ret.views[-1].mask) else ret).simplify(rigid=False)).views[-1]
+  zero_strided_dims = [i for i in range(len(v.shape)) if v.strides[i] == 0]
+  shape = tuple(s for i,s in enumerate(v.shape) if i not in zero_strided_dims)
+  strides = tuple(s for i,s in enumerate(v.strides) if i not in zero_strided_dims)
+  mask = tuple(s for i,s in enumerate(v.mask) if i not in zero_strided_dims) if v.mask else None
+  ret = ShapeTracker(ret.views[:-1] if len(ret.views) > 1 else () + (View.create(shape, strides, v.offset, mask),))
+  if len(strides:=ret.views[-1].strides) > 1 and not all(st==strides[0] for st in strides): ret = ret.permute(argsort(ret.views[-1].strides)[::-1])
+  return ShapeTracker(tuple(v.minify() for v in ret.views))
+
+@dataclass(frozen=True, eq=False)
+class CanonicalShapeTracker(ShapeTracker):
+  def __eq__(self, other):
+    if not isinstance(other, CanonicalShapeTracker): return NotImplemented
+    if self.views == other.views: return True
+    if len(self.views) == len(other.views) == 1:
+      st = ShapeTracker((self.views[0], other.views[0]) if self.size >= other.size else (other.views[0], self.views[0]))
+      if len(_canonicalize(st).views) == 1: return True
+    return False
