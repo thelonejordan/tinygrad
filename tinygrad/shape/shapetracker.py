@@ -148,6 +148,13 @@ class ShapeTracker:
     ret = tuple(v.invert(s) for v,s in zip(self.views[::-1], [x.shape for x in self.views[::-1][1:]]+[out_shape]))
     return ShapeTracker(cast(Tuple[View, ...], ret)).reshape(out_shape) if all(x is not None for x in ret) else None
 
+  def equals(self, other: ShapeTracker) -> bool:
+    if (a := self.canonicalize()) == (b := other.canonicalize()): return True
+    if len(a.views) == len(b.views) == 1:
+      c = ShapeTracker((a.views[0], b.views[0]) if a.size >= b.size else (b.views[0], a.views[0]))
+      if c.canonicalize() == ShapeTracker((c.views[0],)): return True
+    return False
+
   def _canonicalize(self) -> ShapeTracker:
     if len(strides:=(ret:=self).views[-1].strides) > 0: ret = ret.stride(tuple(1 if 0<=st else -1 for st in strides))
     v = (ret := (ret.shrink(mask) if (mask := ret.views[-1].mask) else ret).simplify(rigid=False)).views[-1]

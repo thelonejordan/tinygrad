@@ -75,7 +75,7 @@ if __name__ == "__main__":
       # compare results
       eq = st_equal(st1, st2)
       eqs = sts1 == sts2
-      eqc = stc1 == stc2
+      eqc = stc1.equals(stc2)
       # update stats
       if getenv("CHECK_NEQ") and eq and not eqs: same_but_neq += 1
       if eq and not eqc: same_but_neq_cannon += 1
