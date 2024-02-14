@@ -156,16 +156,13 @@ class ShapeTracker:
     strides = tuple(s for i,s in enumerate(v.strides) if i not in zero_strided_dims)
     mask = tuple(s for i,s in enumerate(v.mask) if i not in zero_strided_dims) if v.mask else None
     ret = ShapeTracker(ret.views[:-1] if len(ret.views) > 1 else () + (View.create(shape, strides, v.offset, mask),))
-    if len(strides:=ret.views[-1].strides) > 0: ret = ret.stride(tuple(1 if 0<=st else -1 for st in ret.views[-1].strides))
     if len(strides:=ret.views[-1].strides) > 1 and not all(st==strides[0] for st in strides): ret = ret.permute(argsort(ret.views[-1].strides)[::-1])
     return ShapeTracker(tuple(v.minify() for v in ret.views))
 
   def canonicalize(self) -> ShapeTracker:
     ret = self._canonicalize()
     while ret != (nxt := ret._canonicalize()): ret = nxt
-    # normalize
-    ret = (ret.shrink(mask) if (mask := ret.views[-1].mask) else ret) # probably overkill
-    return ret.permute(argsort(sts)[::-1]) if len(sts:=ret.views[-1].strides) > 1 and not all(st==sts[0] for st in sts) else ret
+    return ret.permute(argsort(sts)[::-1]) if len(sts:=ret.views[-1].strides) > 1 and not all(st==sts[0] for st in sts[1:]) else ret
 
   @staticmethod
   def from_shape(shape:Tuple[sint, ...]) -> ShapeTracker: return ShapeTracker((View.create(shape),))
