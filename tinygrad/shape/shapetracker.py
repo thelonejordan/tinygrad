@@ -58,13 +58,12 @@ def merge_views(vm2:View, vm1:View, rigid:bool=True) -> Optional[View]:
       if lower % stride == 0 and upper % stride == 0 and (lb := lower // stride) <= vm2.shape[0] and (ub := upper // stride) <= vm2.shape[0]:
         vm2_new = View.create(vm2.shape, vm2.strides, vm2.offset, vm2.mask if vm2.mask else None)
         return vm2_new.shrink(((min(lb,vm2_new.shape[0]),min(ub,vm2_new.shape[0])),) + tuple((0,s) for s in vm2_new.shape[1:]))
-  if not vm2.mask and vm1.offset == 0 and None not in (rstrides := ShapeTracker((vm2, vm1)).real_strides()):
-    return View.create(vm1.shape, cast(Tuple[sint, ...], rstrides), vm2.offset, vm1.mask)
   if vm1.mask:
     for b,e in vm1.mask:
       if not (b < e): return View.create(vm1.shape, (0,) * len(vm1.shape), 0, ((0,0),) * len(vm1.shape))
-    return (merged := merge_views(vm2, vm1.shrink(vm1.mask))) and merged.pad(tuple((b,s-e) for (b,e),s in zip(vm1.mask, vm1.shape)))
-
+    return (merged := merge_views(vm2, vm1.shrink(vm1.mask), rigid)) and merged.pad(tuple((b,s-e) for (b,e),s in zip(vm1.mask, vm1.shape)))
+  if not vm2.mask and vm1.offset == 0 and None not in (rstrides := ShapeTracker((vm2, vm1)).real_strides()):
+    return View.create(vm1.shape, cast(Tuple[sint, ...], rstrides), vm2.offset, vm1.mask)
   # Project vm1 on to vm2.
   origin, terms, strides = _project_view(vm2, vm1)
 
@@ -239,22 +238,17 @@ class CanonicalShapeTracker(ShapeTracker):
     if not isinstance(other, CanonicalShapeTracker): return NotImplemented
     if self.views == other.views: return True
     if len(self.views) == len(other.views) == 1 and len((a := self.views[0]).shape) == len((b := other.views[0]).shape) > 0:
-      if 0 not in a.strides and 0 not in b.strides:
-        arga, argb = [], []
-        for i in range(len(a.shape)):
-          if a.strides[i] == b.strides[i]:
-            arga.append(1)
-            argb.append(1)
-          elif a.strides[i] > b.strides[i]:
-            if a.strides[i] % b.strides[i] == 0:
-              arga.append(1)
-              argb.append(a.strides[i] // b.strides[i])
-            else: break
-          elif b.strides[i] > a.strides[i]:
-            if b.strides[i] % a.strides[i] == 0:
-              arga.append(b.strides[i] // a.strides[i])
-              argb.append(1)
-            else: break
-        else:
-          if a.stride(tuple(arga)) == b.stride(tuple(argb)): return True
+      arga, argb = [], []
+      for i in range(len(a.shape)):
+        ia = ib = 1
+        if a.strides[i] > b.strides[i]:
+          if a.strides[i] % b.strides[i] == 0: ib = a.strides[i] // b.strides[i]
+          else: break
+        if b.strides[i] > a.strides[i]:
+          if b.strides[i] % a.strides[i] == 0: ia = b.strides[i] // a.strides[i]
+          else: break
+        arga.append(ia)
+        argb.append(ib)
+      else:
+        if len(arga) == len(a.shape) and len(arga) == len(a.shape) and a.stride(tuple(arga)) == b.stride(tuple(argb)): return True
     return False

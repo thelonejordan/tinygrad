@@ -80,7 +80,7 @@ if __name__ == "__main__":
       if getenv("CHECK_NEQ") and eq and not eqs: same_but_neq += 1
       if eq and not eqc: same_but_neq_cannon += 1
       # print stuff
-      filterout = False if DEBUG >=1 and getenv("ONLY_NEQ", 0)==0 else not (eq and not eqs)
+      filterout = False if DEBUG >=1 and getenv("ONLY_NEQ", 0)==0 else not (eq and not eqc)
       if not filterout:
         if eq and not eqc:
           if DEBUG >=2 and getenv("VERBOSE", 1) == 2:
