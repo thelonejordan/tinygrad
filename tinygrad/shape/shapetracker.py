@@ -252,5 +252,28 @@ class CanonShapeTracker(ShapeTracker):
         arga.append(ia)
         argb.append(ib)
       else:
-        if len(a.shape) == len(argb) == len(argb) and a.stride(tuple(arga)) == b.stride(tuple(argb)): return True
+        if len(a.shape) == len(arga) == len(argb) and a.stride(tuple(arga)) == b.stride(tuple(argb)): return True
+
+      if not a.mask and not b.mask and a.strides == b.strides:
+        if a.offset == b.offset:
+          if all(sa <= sb for sa,sb in zip(a.shape, b.shape)) or all(sb <= sa for sa,sb in zip(a.shape, b.shape)): return True
+        else:
+          if len(mismatched_dims := [i for i,(sa,sb) in enumerate(zip(a.shape, b.shape)) if sa != sb]) == 1:
+            dim = mismatched_dims[0]
+            if a.offset > b.offset:
+              arg = tuple((a.offset - b.offset if i == dim else 0, 0) for i in range(len((a.shape))))
+              if a.pad(arg).shape[dim] <= b.shape[dim]: return True
+            else:
+              arg = tuple((b.offset - a.offset if i == dim else 0, 0) for i in range(len((b.shape))))
+              if b.pad(arg).shape[dim] <= a.shape[dim]: return True
+
+          if a.offset > b.offset:
+            if all(sa <= sb for sa,sb in zip(a.shape, b.shape)):
+              arg = tuple((sb-sa, 0) for sa,sb in zip(a.shape, b.shape))
+              if a.pad(arg).offset == b.offset: return True
+          else:
+            if all(sb <= sa for sa,sb in zip(a.shape, b.shape)):
+              arg = tuple((sa-sb, 0) for sa,sb in zip(a.shape, b.shape))
+              if b.pad(arg).offset == a.offset: return True
+
     return False
