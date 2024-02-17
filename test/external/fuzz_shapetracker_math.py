@@ -31,7 +31,7 @@ def fuzz_invert(verbose=True) -> Tuple[ShapeTracker, ShapeTracker]:
   st_sum = (m.sts[0] + inv) if inv else None
   return start, st_sum
 
-def _display_extra_info(exp: ShapeTracker, got: ShapeTracker):
+def _display_debug_info(exp: ShapeTracker, got: ShapeTracker):
   if len(exp.views) > 1:
     print()
     exp = ShapeTracker(exp.views[-2:])
@@ -66,8 +66,6 @@ if __name__ == "__main__":
       eqs = sts1 == sts2
       eqc = stc1 == stc2
       eqcr = stcr1 == stcr2
-      # if len(st1.shape) > 0 and all(x is None for x in st1.real_strides()): eqc = eqs = eq
-      # if len(st2.shape) > 0 and all(x is None for x in st2.real_strides()): eqc = eqs = eq
       # update stats
       if eq and not eqs: same_but_neq += 1
       if eq and not eqc: same_but_neq_canon += 1
@@ -81,7 +79,7 @@ if __name__ == "__main__":
         if eq and not eqc:
           if DEBUG >=2 and getenv("VERBOSE") == 2:
             # extra stuff for printing
-            _display_extra_info(st1, st2)
+            _display_debug_info(st1, st2)
         if DEBUG >=1 and getenv("CHECK_NEQ") and eq and not (eqs and eqc):
           print(f"EXP SIMPL: {sts1}")
           print(f"GOT SIMPL: {sts2}")
@@ -99,7 +97,7 @@ if __name__ == "__main__":
           print(colored("**** (canon)", "green" if eqc else "red"))
           print(colored("**** (canon repr)", "green" if eqcr else "yellow" if eqc else "red"))
       # mandatory checks
-      if eq and eqs: assert eqc
+      if eq and eqs: assert eqc and eqcr
       if not eq: exit(0)
     # print agg stats
     print(f"views per shapetracker {(nviews/total):.2f}(real), {(nviews_simpl/total):.2f}(simpl), {(nviews_canon/total):.2f}(canon)")
