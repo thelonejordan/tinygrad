@@ -238,42 +238,12 @@ class CanonShapeTracker(ShapeTracker):
   def __eq__(self, other):
     if not isinstance(other, CanonShapeTracker): return NotImplemented
     if self.views == other.views: return True
-    if len(self.views) == len(other.views) == 1 and len((a := self.views[0]).shape) == len((b := other.views[0]).shape) > 0:
-      arga, argb = [], []
-      for i in range(len(a.shape)):
-        if a.strides[i] == 0 or b.strides[i] == 0: break
-        ia = ib = 1
-        if a.strides[i] > b.strides[i]:
-          if a.strides[i] % b.strides[i] == 0: ib = a.strides[i] // b.strides[i]
-          else: break
-        if b.strides[i] > a.strides[i]:
-          if b.strides[i] % a.strides[i] == 0: ia = b.strides[i] // a.strides[i]
-          else: break
-        arga.append(ia)
-        argb.append(ib)
-      else:
-        if len(a.shape) == len(arga) == len(argb) and a.stride(tuple(arga)) == b.stride(tuple(argb)): return True
-
-      if not a.mask and not b.mask and a.strides == b.strides:
+    if len(self.views) == len(other.views) == 1 and len((a := self.views[0]).shape) > 0 and len((b := other.views[0]).shape) > 0:
+      if not a.mask and not b.mask and all(sta>=0 and stb>=0 for sta,stb in zip(a.strides, b.strides)):
         if a.offset == b.offset:
           if all(sa <= sb for sa,sb in zip(a.shape, b.shape)) or all(sb <= sa for sa,sb in zip(a.shape, b.shape)): return True
         else:
-          if len(mismatched_dims := [i for i,(sa,sb) in enumerate(zip(a.shape, b.shape)) if sa != sb]) == 1:
-            dim = mismatched_dims[0]
-            if a.offset > b.offset:
-              arg = tuple((a.offset - b.offset if i == dim else 0, 0) for i in range(len((a.shape))))
-              if a.pad(arg).shape[dim] <= b.shape[dim]: return True
-            else:
-              arg = tuple((b.offset - a.offset if i == dim else 0, 0) for i in range(len((b.shape))))
-              if b.pad(arg).shape[dim] <= a.shape[dim]: return True
-
-          if a.offset > b.offset:
-            if all(sa <= sb for sa,sb in zip(a.shape, b.shape)):
-              arg = tuple((sb-sa, 0) for sa,sb in zip(a.shape, b.shape))
-              if a.pad(arg).offset == b.offset: return True
-          else:
-            if all(sb <= sa for sa,sb in zip(a.shape, b.shape)):
-              arg = tuple((sa-sb, 0) for sa,sb in zip(a.shape, b.shape))
-              if b.pad(arg).offset == a.offset: return True
-
+          enda, endb = sum(s*st for s,st in zip(a.shape, a.strides)), sum(s*st for s,st in zip(b.shape, b.strides))
+          if a.offset > b.offset and enda <= endb: return True
+          if endb <= enda: return True
     return False
