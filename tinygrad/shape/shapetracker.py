@@ -238,12 +238,14 @@ class CanonShapeTracker(ShapeTracker):
   def __eq__(self, other):
     if not isinstance(other, CanonShapeTracker): return NotImplemented
     if self.views == other.views: return True
-    if len(self.views) == len(other.views) == 1 and len((a := self.views[0]).shape) > 0 and len((b := other.views[0]).shape) > 0:
-      if not a.mask and not b.mask and all(sta>=0 and stb>=0 for sta,stb in zip(a.strides, b.strides)):
-        if a.offset == b.offset:
-          if all(sa <= sb for sa,sb in zip(a.shape, b.shape)) or all(sb <= sa for sa,sb in zip(a.shape, b.shape)): return True
-        else:
-          enda, endb = sum(s*st for s,st in zip(a.shape, a.strides)), sum(s*st for s,st in zip(b.shape, b.strides))
-          if a.offset > b.offset and enda <= endb: return True
-          if endb <= enda: return True
+    if len(self.views) == len(other.views) == 1:
+      if (not (a := self.views[0]).shape or 0 in a.shape) or (not (b := other.views[0]).shape or 0 in b.shape): return True
+      if len(a.shape) > 0 and len(b.shape) > 0:
+        if not a.mask and not b.mask and all(sta>=0 and stb>=0 for sta,stb in zip(a.strides, b.strides)):
+          if a.offset == b.offset:
+            if all(sa <= sb for sa,sb in zip(a.shape, b.shape)) or all(sb <= sa for sa,sb in zip(a.shape, b.shape)): return True
+          else:
+            enda, endb = sum(s*st for s,st in zip(a.shape, a.strides)), sum(s*st for s,st in zip(b.shape, b.strides))
+            if a.offset > b.offset and enda <= endb: return True
+            if endb <= enda: return True
     return False
