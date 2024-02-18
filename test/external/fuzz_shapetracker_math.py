@@ -94,15 +94,15 @@ if __name__ == "__main__":
         if DEBUG >=1:
           print(colored(f"****{' (symbolic)' if DEBUG >=2 else ''}", "green" if eq else "red"))
         if DEBUG >=2:
-          print(colored("**** (canon)", "green" if eqc else "red"))
           print(colored("**** (canon repr)", "green" if eqcr else "yellow" if eqc else "red"))
+          print(colored("**** (canon)", "green" if eqc else "red"))
       # mandatory checks
       if eq and eqs: assert eqc and eqcr
       if not eq: exit(0)
     # print agg stats
-    print(f"views per shapetracker {(nviews/total):.2f}(real), {(nviews_simpl/total):.2f}(simpl), {(nviews_canon/total):.2f}(canon)")
     if getenv("CHECK_NEQ"):
       print(f"same but unequal {(same_but_neq/total)*100:.2f}%")
       if DEBUG >=2:
-        print(f"same but unequal canon {(same_but_neq_canon/total)*100:.2f}%")
         print(f"same but unequal canon repr {(same_but_neq_canon_repr/total)*100:.2f}%")
+        print(f"same but unequal canon {(same_but_neq_canon/total)*100:.2f}%")
+        print(f"views per shapetracker {(nviews/total):.2f}(real), {(nviews_simpl/total):.2f}(simpl), {(nviews_canon/total):.2f}(canon)")

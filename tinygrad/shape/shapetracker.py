@@ -240,8 +240,7 @@ class CanonShapeTracker(ShapeTracker):
     if self.views == other.views: return True
     if len(self.views) == len(other.views) == 1:
       if (not (a := self.views[0]).shape or 0 in a.shape) or (not (b := other.views[0]).shape or 0 in b.shape): return True
-      if len(a.shape) > 0 and len(b.shape) > 0:
-        if not a.mask and not b.mask and all(sta>=0 and stb>=0 for sta,stb in zip(a.strides, b.strides)):
-          enda, endb = sum(s*st for s,st in zip(a.shape, a.strides)), sum(s*st for s,st in zip(b.shape, b.strides))
-          if (b.offset <= a.offset and enda <= endb) or (a.offset <= b.offset and endb <= enda): return True  # encapsulation check
+      if len(a.shape) > 0 and len(b.shape) > 0 and not a.mask and not b.mask and all(sta>=0 and stb>=0 for sta,stb in zip(a.strides, b.strides)):
+        enda, endb = a.offset + sum((s-1)*st for s,st in zip(a.shape, a.strides)), b.offset + sum((s-1)*st for s,st in zip(b.shape, b.strides))
+        if (b.offset <= a.offset and enda <= endb) or (a.offset <= b.offset and endb <= enda): return True  # encapsulation check
     return False
