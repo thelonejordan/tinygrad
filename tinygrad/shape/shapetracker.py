@@ -205,6 +205,8 @@ class ShapeTracker:
       return ShapeTracker(self.views[:-2] + (new_view,)).simplify(rigid)
     return self
 
+  def minify(self) -> ShapeTracker: return ShapeTracker((self.views[:-1] if len(self.views) > 1 else tuple()) + (self.views[-1].minify(),))
+
   # *** under this line are the movement ops ***
 
   def pad(self, arg: Tuple[Tuple[sint, sint], ...]) -> ShapeTracker: return ShapeTracker(self.views[0:-1] + (self.views[-1].pad(arg), ))
@@ -219,28 +221,16 @@ class ShapeTracker:
 
   # *** canonical shapetracker ***
 
-  def canonicalize(self) -> CanonShapeTracker:
+  def canonicalize(self) -> ShapeTracker:
     ret = _canonicalize(self)
     while ret != (nxt := _canonicalize(ret)): ret = nxt
-    return CanonShapeTracker(ret.views)
+    return ret
 
 def _canonicalize(x: ShapeTracker) -> ShapeTracker:
-  ret = x.simplify()
+  ret = x.simplify().minify()
   if len(strides:=ret.views[-1].strides) > 0: ret = ret.stride(tuple(1 if 0<=st else -1 for st in strides))
   if (mask := ret.views[-1].mask): ret = ret.shrink(mask)
   ret = ret.simplify(False)
-  ret = ShapeTracker(ret.views[:-1] if len(ret.views) > 1 else () + (ret.views[-1].remove_zero_strided_dims(),))
+  ret = ShapeTracker((ret.views[:-1] if len(ret.views) > 1 else tuple()) + (ret.views[-1].remove_zero_strided_dims(),))
   if len(strd:=ret.views[-1].strides) > 1 and not all(st==strd[0] for st in strd): ret = ret.permute(argsort(ret.views[-1].strides)[::-1])
   return ShapeTracker(tuple(v.minify() for v in ret.views))
-
-@dataclass(frozen=True, eq=False)
-class CanonShapeTracker(ShapeTracker):
-  def __eq__(self, other):
-    if not isinstance(other, CanonShapeTracker): return NotImplemented
-    if self.views == other.views: return True
-    if len(self.views) == len(other.views) == 1:
-      if (not (a := self.views[0]).shape or 0 in a.shape) or (not (b := other.views[0]).shape or 0 in b.shape): return True
-      if len(a.shape) > 0 and len(b.shape) > 0 and not a.mask and not b.mask and all(sta>=0 and stb>=0 for sta,stb in zip(a.strides, b.strides)):
-        enda, endb = a.offset + sum((s-1)*st for s,st in zip(a.shape, a.strides)), b.offset + sum((s-1)*st for s,st in zip(b.shape, b.strides))
-        if (b.offset <= a.offset and enda <= endb) or (a.offset <= b.offset and endb <= enda): return True  # encapsulation check
-    return False

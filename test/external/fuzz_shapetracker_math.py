@@ -60,16 +60,13 @@ if __name__ == "__main__":
       st1, st2 = fuzz(verbose)
       sts1, sts2 = st1.simplify(), st2.simplify()
       stc1, stc2 = st1.canonicalize(), st2.canonicalize()
-      stcr1, stcr2 = ShapeTracker(stc1.views), ShapeTracker(stc2.views)
       # compare results
       eq = st_equal(st1, st2)
       eqs = sts1 == sts2
       eqc = stc1 == stc2
-      eqcr = stcr1 == stcr2
       # update stats
       if eq and not eqs: same_but_neq += 1
       if eq and not eqc: same_but_neq_canon += 1
-      if eq and not eqcr: same_but_neq_canon_repr += 1
       nviews += len(st1.views)
       nviews_simpl += len(sts1.views)
       nviews_canon += len(stc1.views)
@@ -94,15 +91,13 @@ if __name__ == "__main__":
         if DEBUG >=1:
           print(colored(f"****{' (symbolic)' if DEBUG >=2 else ''}", "green" if eq else "red"))
         if DEBUG >=2:
-          print(colored("**** (canon repr)", "green" if eqcr else "yellow" if eqc else "red"))
           print(colored("**** (canon)", "green" if eqc else "red"))
       # mandatory checks
-      if eq and eqs: assert eqc and eqcr
+      if eq and eqs: assert eqc
       if not eq: exit(0)
     # print agg stats
     if getenv("CHECK_NEQ"):
       print(f"same but unequal {(same_but_neq/total)*100:.2f}%")
       if DEBUG >=2:
-        print(f"same but unequal canon repr {(same_but_neq_canon_repr/total)*100:.2f}%")
         print(f"same but unequal canon {(same_but_neq_canon/total)*100:.2f}%")
         print(f"views per shapetracker {(nviews/total):.2f}(real), {(nviews_simpl/total):.2f}(simpl), {(nviews_canon/total):.2f}(canon)")
