@@ -206,6 +206,8 @@ class ShapeTracker:
     return self
 
   def minify(self) -> ShapeTracker: return ShapeTracker((self.views[:-1] if len(self.views) > 1 else tuple()) + (self.views[-1].minify(),))
+  def remove_zero_strided_dims(self) -> ShapeTracker:
+    return ShapeTracker((self.views[:-1] if len(self.views) > 1 else tuple()) + (self.views[-1].remove_zero_strided_dims(),))
 
   # *** under this line are the movement ops ***
 
@@ -231,6 +233,6 @@ def _canonicalize(x: ShapeTracker) -> ShapeTracker:
   if len(strides:=ret.views[-1].strides) > 0: ret = ret.stride(tuple(1 if 0<=st else -1 for st in strides))
   if (mask := ret.views[-1].mask): ret = ret.shrink(mask)
   ret = ret.simplify(False)
-  ret = ShapeTracker((ret.views[:-1] if len(ret.views) > 1 else tuple()) + (ret.views[-1].remove_zero_strided_dims(),))
-  if len(strd:=ret.views[-1].strides) > 1 and not all(st==strd[0] for st in strd): ret = ret.permute(argsort(ret.views[-1].strides)[::-1])
+  ret = ret.remove_zero_strided_dims()
+  if len(strd:=ret.views[-1].strides) > 1 and not all(st==strd[0] for st in strd): ret = ret.permute(argsort(strd)[::-1])
   return ShapeTracker(tuple(v.minify() for v in ret.views))
