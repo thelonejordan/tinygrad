@@ -7,6 +7,7 @@ from tinygrad.shape.symbolic import Node, NumNode, Variable, sint
 
 @functools.lru_cache(maxsize=None)
 def canonicalize_strides(shape:Tuple[sint, ...], strides:Tuple[sint, ...]) -> Tuple[sint, ...]:
+  if any(s == 0 for s in shape): return (0,) * len(strides)
   return tuple(0 if s == 1 else st for s, st in zip(shape, strides))
 
 @functools.lru_cache(maxsize=None)
@@ -94,6 +95,15 @@ class View:
       offset += sum((strides[i] * mask[i][0]) if e else 0 for i, e in enumerate(elim))
       strides = tuple(0 if e else st for st,e in zip(strides, elim))
     return View(shape, strides, offset, mask, contiguous)
+
+  @staticmethod
+  def empty(shape:Tuple[sint, ...]=(0,)): return View.create(shape, (0,) * len(shape), 0, ((0,0),) * len(shape))
+
+  def remove_zero_strided_dims(self) -> View:
+    zero_strided = [i for i in range(len(self.shape)) if self.strides[i] == 0]
+    sh, st = tuple(s for i,s in enumerate(self.shape) if i not in zero_strided), tuple(s for i,s in enumerate(self.strides) if i not in zero_strided)
+    mask = tuple(s for i,s in enumerate(self.mask) if i not in zero_strided) if self.mask else None
+    return View.create(sh, st, self.offset, mask)
 
   @functools.lru_cache(None)  # pylint: disable=method-cache-max-size-none
   def vars(self) -> Set[Variable]:

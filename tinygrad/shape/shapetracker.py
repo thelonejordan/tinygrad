@@ -3,42 +3,73 @@ from __future__ import annotations
 import functools, math
 from dataclasses import dataclass
 from typing import Tuple, List, Optional, Dict, Set, cast, Iterable, Union
-from tinygrad.helpers import merge_dicts, getenv
+from tinygrad.helpers import merge_dicts, getenv, prod, argsort
 from tinygrad.shape.symbolic import Variable, MulNode, Node, SumNode, NumNode, sint
 from tinygrad.shape.view import View, strides_for_shape
 
-def un1d(shape:Tuple[sint, ...], offs:sint) -> List[sint]:
-  strides = strides_for_shape(shape)
-  result = []
-  for stride in strides:
-    here = offs // stride if stride else 0
-    result.append(here)
-    offs -= here * stride
-  return result
+def _un1d(shape:Tuple[sint, ...], pos:sint) -> List[sint]:
+  ret = []
+  for stride in strides_for_shape(shape):
+    here = pos // stride if stride else 0
+    ret.append(here)
+    pos -= here * stride
+  return ret
 
-@functools.lru_cache(maxsize=None)
-def merge_views(vm2:View, vm1:View) -> Optional[View]:
-  if vm2.contiguous: return vm1
-  if vm1.contiguous and vm1.shape == vm2.shape: return vm2
-  if vm1.contiguous and vm1.size() == vm2.size() and (ret := vm2.reshape(vm1.shape)) is not None: return ret
-  if not vm2.mask and vm1.offset == 0 and None not in (rstrides := ShapeTracker((vm2, vm1)).real_strides()):
-    return View.create(vm1.shape, cast(Tuple[sint, ...], rstrides), vm2.offset, vm1.mask)
-  if vm1.mask:
-    for b,e in vm1.mask:
-      if not (b < e): return View.create(vm1.shape, (0,) * len(vm1.shape), 0, ((0,0),) * len(vm1.shape))
-    return (merged := merge_views(vm2, vm1.shrink(vm1.mask))) and merged.pad(tuple((b,s-e) for (b,e),s in zip(vm1.mask, vm1.shape)))
-
-  # Project vm1's offset and strides on to vm2.
-  origin = un1d(vm2.shape, vm1.offset)
-  terms: List[List[Tuple[int, sint]]] = [[] for _ in origin]
+def _project_view(vm2:View, vm1:View) -> Tuple[List[sint], List[List[Tuple[int, sint]]], List[sint]]:
+  # project vm1's offset and strides on to vm2
+  origin = _un1d(vm2.shape, vm1.offset)
+  coeffs: List[List[Tuple[int, sint]]] = [[] for _ in origin]
   strides: List[sint] = [0] * len(vm1.shape)
   for d1, st in enumerate(vm1.strides):
+    # take a step (or a single stride) along each dim (of vm1)
     if st == 0: continue
-    for d2, (o, s1) in enumerate(zip(origin, un1d(vm2.shape, vm1.offset + st))):
-      if (s1 := s1 - o) == 0: continue
-      terms[d2].append((d1, s1))
-      strides[d1] += s1 * vm2.strides[d2]
+    for d2, (o, idx) in enumerate(zip(origin, _un1d(vm2.shape, vm1.offset + st))):
+      if (coeff := idx - o) == 0: continue
+      strides[d1] += coeff * vm2.strides[d2]
+      coeffs[d2].append((d1, coeff))
+  return origin, coeffs, strides
 
+def _fit_shape(shape: Tuple[sint, ...], size: sint) -> Optional[Tuple[sint, ...]]:
+  new_shape = []
+  for s in reversed(shape):
+    if size % s == 0:
+      new_shape.append(s)
+      size = size // s
+    elif s > size: new_shape.append(size)
+    else: break
+  else: return tuple(reversed(new_shape))
+  return None
+
+@functools.lru_cache(maxsize=None)
+def merge_views(vm2:View, vm1:View, rigid:bool=True) -> Optional[View]:
+  if not rigid and 0 in vm1.shape: return View.empty()
+  vm1 = vm1.shrink(vm1.mask) if not rigid and vm1.mask else vm1
+  if vm2.contiguous: return vm1
+  if vm1.contiguous:
+    if vm1.shape == vm2.shape: return vm2
+    if vm1.size() == vm2.size():
+      if not rigid: return vm2
+      if (ret := vm2.reshape(vm1.shape)) is not None: return ret
+    if not rigid and not vm2.mask and vm2.offset == 0:
+      if (nshape := _fit_shape(vm2.shape, vm1.size())) is not None and len(nshape) == len(vm2.shape):
+        if prod(nshape) == vm1.size(): return View.create(nshape, vm2.strides, 0, None)
+  if not rigid and vm1.strides == strides_for_shape(vm1.shape):
+    lower, upper = min(max(0, vm1.offset), vm2.size()), min(max(0, vm1.offset + vm1.size()), vm2.size())
+    if not (lower < upper): return View.empty()
+    if 0 < len(vm2.shape) and 0 <= lower < upper and (stride := prod(vm2.shape[1:])) != 0:
+      if lower % stride == 0 and upper % stride == 0 and (lb := lower // stride) <= vm2.shape[0] and (ub := upper // stride) <= vm2.shape[0]:
+        vm2_new = View.create(vm2.shape, vm2.strides, vm2.offset, vm2.mask if vm2.mask else None)
+        return vm2_new.shrink(((min(lb,vm2_new.shape[0]),min(ub,vm2_new.shape[0])),) + tuple((0,s) for s in vm2_new.shape[1:]))
+  if vm1.mask:
+    for b,e in vm1.mask:
+      if not (b < e): return View.empty(vm1.shape)
+    return (merged := merge_views(vm2, vm1.shrink(vm1.mask), rigid)) and merged.pad(tuple((b,s-e) for (b,e),s in zip(vm1.mask, vm1.shape)))
+
+  if not vm2.mask and vm1.offset == 0 and None not in (rstrides := ShapeTracker((vm2, vm1)).real_strides()):
+    return View.create(vm1.shape, cast(Tuple[sint, ...], rstrides), vm2.offset, vm1.mask)
+
+  # Project vm1 on to vm2.
+  origin, terms, strides = _project_view(vm2, vm1)
   # Merge dimensions in vm2 if required.
   # NB: Merging too many dimensions can make it difficult to project vm2's mask, hence only combining when required.
   idxs: List[Node] = [Variable(f"idx{i}", 0, s-1) for i,s in enumerate(vm1.shape)]
@@ -106,7 +137,7 @@ class ShapeTracker:
     return ShapeTracker(cast(Tuple[View, ...], ret)).reshape(out_shape) if all(x is not None for x in ret) else None
 
   @staticmethod
-  def from_shape(shape:Tuple[sint, ...]): return ShapeTracker((View.create(shape),))
+  def from_shape(shape:Tuple[sint, ...]) -> ShapeTracker: return ShapeTracker((View.create(shape),))
 
   @property
   def contiguous(self) -> bool: return len(self.views) == 1 and self.views[0].contiguous
@@ -169,10 +200,14 @@ class ShapeTracker:
     _, valid = self.expr_idxs()
     return f'idx{axis}' in [v.expr for v in valid.vars()]
 
-  def simplify(self) -> ShapeTracker:
-    if len(self.views) >= 2 and (new_view := merge_views(self.views[-2], self.views[-1])) is not None:
-      return ShapeTracker(self.views[:-2] + (new_view,)).simplify()
+  def simplify(self, rigid:bool=True) -> ShapeTracker:
+    if len(self.views) >= 2 and (new_view := merge_views(self.views[-2], self.views[-1], rigid)) is not None:
+      return ShapeTracker(self.views[:-2] + (new_view,)).simplify(rigid)
     return self
+
+  def minify(self) -> ShapeTracker: return ShapeTracker((self.views[:-1] if len(self.views) > 1 else tuple()) + (self.views[-1].minify(),))
+  def remove_zero_strided_dims(self) -> ShapeTracker:
+    return ShapeTracker((self.views[:-1] if len(self.views) > 1 else tuple()) + (self.views[-1].remove_zero_strided_dims(),))
 
   # *** under this line are the movement ops ***
 
@@ -185,3 +220,19 @@ class ShapeTracker:
   def reshape(self, new_shape: Tuple[sint, ...]) -> ShapeTracker:
     if getenv("MERGE_VIEW", 1) and (new_view := self.views[-1].reshape(new_shape)) is not None: return ShapeTracker(self.views[0:-1] + (new_view,))
     return ShapeTracker(self.views + (View.create(new_shape), ))
+
+  # *** canonical shapetracker ***
+
+  def canonicalize(self) -> ShapeTracker:
+    ret = _canonicalize(self)
+    while ret != (nxt := _canonicalize(ret)): ret = nxt
+    return ret
+
+def _canonicalize(x: ShapeTracker) -> ShapeTracker:
+  ret = x.simplify().minify()
+  if len(strides:=ret.views[-1].strides) > 0: ret = ret.stride(tuple(1 if 0<=st else -1 for st in strides))
+  if (mask := ret.views[-1].mask): ret = ret.shrink(mask)
+  ret = ret.simplify(False)
+  ret = ret.remove_zero_strided_dims()
+  if len(strd:=ret.views[-1].strides) > 1 and not all(st==strd[0] for st in strd): ret = ret.permute(argsort(strd)[::-1])
+  return ShapeTracker(tuple(v.minify() for v in ret.views))
